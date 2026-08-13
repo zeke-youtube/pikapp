@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pikapp",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-08-01",
+  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "single-page-application" },
+  "kv_namespaces": [
+    // No id is intentional: Wrangler provisions the namespace on first deploy,
+    // writes its generated id back here, and reuses it on later deploys.
+    { "binding": "PIKAPP_KV" }
+  ],
+  "vars": { "AI_PROVIDER": "none", "AI_BASE_URL": "https://api.openai.com/v1", "AI_MODEL": "gpt-4.1-mini" }
+}
