@@ -8,7 +8,7 @@ PikApp is a lightweight, mobile-first social network with a deliberately separat
 - **Backend:** one Cloudflare Worker in `worker/index.js`, serving REST APIs and static assets.
 - **Data:** Cloudflare KV binding named `PIKAPP_KV`, using namespaced keys such as `user:`, `username:`, `session:`, `post:`, `post-likes:`, `followers:`, `following:`, `feed:recent`, and `mod:event:`. KV is eventually consistent; counters and list updates can briefly lag or lose competing writes. This is an intentional MVP tradeoff, not a transactional design.
 - **Search:** MiniSearch runs inside the Worker over bounded recent-user/recent-post sets; browsers never download the complete corpus. It can later be replaced behind `/api/search`.
-- **Security:** authorization, roles, bans, input validation, spam controls, and moderation all run in the Worker. Passwords use Web Crypto PBKDF2-HMAC-SHA-256 with a random 128-bit salt and 210,000 iterations. Sessions use random opaque, HttpOnly, Secure, SameSite=Lax cookies. Raw email is omitted from public API objects unless `showEmail` is true.
+- **Security:** authorization, roles, bans, input validation, spam controls, and moderation all run in the Worker. Passwords use Web Crypto PBKDF2-HMAC-SHA-256 with a random 128-bit salt and 100,000 iterations (Cloudflare Workers' supported maximum); the iteration count is stored with each hash for compatibility. Sessions use random opaque, HttpOnly, Secure, SameSite=Lax cookies. Raw email is omitted from public API objects unless `showEmail` is true.
 
 ## Files
 
