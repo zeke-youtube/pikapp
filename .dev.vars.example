@@ -1,2 +1,3 @@
-AI_API_KEY="replace-me"
-MODERATION_API_KEY="replace-me"
+# PikApp uses the PIKAPP_KV and AI bindings declared in wrangler.jsonc.
+# Workers AI needs no AI_API_KEY or MODERATION_API_KEY.
+# Add only future non-Cloudflare secrets here, then copy this file to .dev.vars.

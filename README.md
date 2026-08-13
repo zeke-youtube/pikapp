@@ -1,6 +1,6 @@
 # PikApp MVP
 
-PikApp is a lightweight, mobile-first social network with a deliberately separate AI chat workspace. The social side supports registration, sessions, text posts and replies, likes, follows, profiles, Gravatar avatars, and ranked Explore search. AI never appears in or modifies the social feed.
+PikApp is a lightweight, mobile-first social network with a deliberately separate AI chat workspace. The social side supports registration, sessions, editable text posts, one-level threaded replies, likes, follows, profiles, Gravatar avatars, and ranked Explore search. Direct thread links use `/?post=<post-id>`. AI never appears in or modifies the social feed.
 
 ## Architecture
 
@@ -53,9 +53,19 @@ The `ai` section in `wrangler.jsonc` creates the `AI` binding. Workers AI is aut
 
 To bootstrap the first admin, register normally, then use the Cloudflare dashboard's KV viewer to edit `user:<id>` and change `"role":"user"` to `"role":"admin"`. Find the ID in `username:<your_username>`. Thereafter admins can manage moderator roles via the protected API. Do not accept roles from registration clients.
 
+## Editing and conversation behavior
+
+Every feed post opens a shareable thread at `/?post=<post-id>`. The thread shows the original, an authenticated reply composer, and one clear level of replies. Reply creation and deletion update the stored parent count and repaint the page without a reload. Owners can edit their posts or replies inline; the Worker derives ownership from the session cookie, moderates the proposed replacement, preserves `createdAt`, and writes `updatedAt` plus `edited: true` only after acceptance. Moderators/admins can remove content but cannot edit another author’s words.
+
+In the separate AI workspace, only user messages have **Edit**. **Save & Resend** removes that message’s later conversation, sends the edited history, and regenerates the assistant response. Assistant messages provide **Copy response** and **Regenerate**; fenced code also has its own copy button. Rendering escapes HTML before applying a deliberately small Markdown subset, so model-provided raw HTML is never injected.
+
+## Why Workers AI was failing
+
+The old chat path treated the AI call as a one-off integration and returned an undifferentiated upstream error, while example environment files incorrectly implied external AI and moderation keys were required. PikApp now resolves a small `CloudflareWorkersAIProvider` from the Wrangler-provisioned `AI` binding and calls `env.AI.run(model, { messages })`. Invalid input, missing/malformed binding, rate limits, and temporary upstream failures receive distinct 400, 500, 429, and 503 responses. Server logs retain diagnostic status/name/message only and public responses never include stacks or secrets. The only required AI credential is Cloudflare’s binding authorization; **no `AI_API_KEY` or `MODERATION_API_KEY` is required**.
+
 ## Moderation and spam controls
 
-Posts are checked in order: authenticated/non-banned user, 1–750 character validation, maximum three links, five-second cooldown, one-hour duplicate detection, then automated moderation. Rejected text is **not stored**; only actor ID, timestamp, category/result, and action are audited. Provider failures fail closed. The panel at `/mod.html` shows safe metadata rather than rejected content. Moderators can remove posts and ban users; only admins can unban users or change moderator roles. Every action is re-authorized in the Worker.
+New posts, replies, and edits require an authenticated, non-banned user, 1–750 characters, no more than three links, and successful automated moderation. New top-level posts additionally use a five-second cooldown and one-hour duplicate check. Rejected new text is **not stored**, and rejected edits leave the previously stored content untouched; only actor ID, timestamp, category/result, and action are audited. Provider failures fail closed. The panel at `/mod.html` shows safe metadata rather than rejected content. Moderators can remove posts and ban users; only admins can unban users or change moderator roles. Every action is re-authorized in the Worker.
 
 ## Tests and checks
 
@@ -64,7 +74,7 @@ npm test
 npm run check
 ```
 
-Tests cover registration, PBKDF2 authentication, private email serialization, authorization, creation/deletion, moderation rejection, like/unlike, follow/unfollow, moderator restrictions, and admin-only actions.
+Tests cover registration/login, Cloudflare-compatible PBKDF2, private email serialization, post/reply creation, reply counts, owner and cross-user edit/delete authorization, moderation rejection with original-content preservation, like/unlike, follow/unfollow, Workers AI success/failure mapping, moderator restrictions, and admin-only actions.
 
 ## Deploy method A: terminal / npx Wrangler
 
@@ -122,10 +132,10 @@ If your account UI offers only **Pages** for Git imports, use **Workers & Pages 
 - **401:** sign in; cookies must be enabled. Secure session cookies require HTTPS outside local Wrangler development.
 - **403:** the account is banned or lacks the backend role required for moderation.
 - **429:** wait five seconds or avoid submitting a recent duplicate.
-- **AI 503:** verify that the Worker's Workers AI binding is named `AI`. The app intentionally does not fake responses.
+- **AI 500 (binding configuration) or 503 (provider outage):** verify that the Worker's Workers AI binding is named `AI`. The app intentionally does not fake responses.
 - **Posts rejected with a service-unavailable audit reason:** check the Workers AI binding and moderation model availability; moderation intentionally fails closed.
 - **Static 404:** verify the Worker is deployed from repository root and assets directory remains `./public`.
 
 ## MVP limitations
 
-KV list mutations are not atomic and search covers bounded recent records. There are no uploads, DMs, notifications, WebSockets, or realtime features. Profile editing and a richer threaded reply view are intentionally deferred; the stored model already supports bios/email visibility for later authenticated settings UI.
+KV list mutations are not atomic and search covers bounded recent records. There are no uploads, DMs, notifications, WebSockets, or realtime features. Profile editing is intentionally deferred; the stored model already supports bios/email visibility for later authenticated settings UI.
