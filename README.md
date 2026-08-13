@@ -31,7 +31,7 @@ npm install
 npx wrangler dev
 ```
 
-Open the URL Wrangler prints (normally `http://localhost:8787`). Wrangler uses local KV storage while developing. For local AI/moderation credentials, copy `.dev.vars.example` to `.dev.vars`; this file is ignored by Git. With no AI credentials, chat clearly returns `AI provider is not configured.` Social posting still uses a small local high-risk rule set. Production deployments should configure the external moderation credential so moderation can fail closed if that service is unavailable.
+Open the URL Wrangler prints (normally `http://localhost:8787`). Wrangler uses local KV storage while developing and automatically exposes the configured Workers AI binding. No Groq, OpenAI, moderation, or other provider API key is required. Both chat and automated post moderation run through Cloudflare Workers AI; moderation fails closed if the binding or model is unavailable.
 
 ## Configuration
 
@@ -40,22 +40,16 @@ Required binding:
 | Name | Type | Purpose |
 |---|---|---|
 | `PIKAPP_KV` | KV namespace | users, sessions, posts, relationships, moderation metadata |
+| `AI` | Workers AI | AI chat and automated post moderation |
 
-Optional variables (non-secret values are in `wrangler.jsonc`):
+Model variables (non-secret values are in `wrangler.jsonc`):
 
 | Name | Default | Purpose |
 |---|---|---|
-| `AI_PROVIDER` | `none` | set to `openai-compatible` to enable chat |
-| `AI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint |
-| `AI_MODEL` | `gpt-4.1-mini` | configured chat model |
-| `MODERATION_MODEL` | `omni-moderation-latest` | optional moderation model |
+| `AI_MODEL` | `@cf/meta/llama-3.1-8b-instruct` | Workers AI chat model |
+| `MODERATION_MODEL` | `@cf/meta/llama-guard-3-8b` | Workers AI safety model |
 
-Optional secrets (never place these in `public/` or Git): `AI_API_KEY` enables chat and `MODERATION_API_KEY` enables provider moderation. They can be separate credentials. Configure them with:
-
-```bash
-npx wrangler secret put AI_API_KEY
-npx wrangler secret put MODERATION_API_KEY
-```
+The `ai` section in `wrangler.jsonc` creates the `AI` binding. Workers AI is authenticated by the deployed Worker, so the application has no AI or moderation secrets to create, store, or expose.
 
 To bootstrap the first admin, register normally, then use the Cloudflare dashboard's KV viewer to edit `user:<id>` and change `"role":"user"` to `"role":"admin"`. Find the ID in `username:<your_username>`. Thereafter admins can manage moderator roles via the protected API. Do not accept roles from registration clients.
 
@@ -97,14 +91,7 @@ If automatic provisioning is unavailable on an older Wrangler installation, upgr
 npx wrangler kv namespace create PIKAPP_KV
 ```
 
-Configure desired production secrets after the Worker exists:
-
-```bash
-npx wrangler secret put MODERATION_API_KEY
-npx wrangler secret put AI_API_KEY
-```
-
-To enable chat, change `AI_PROVIDER` from `none` to `openai-compatible` in `wrangler.jsonc`. Validate locally and deploy updates:
+Chat and moderation are enabled by the Workers AI binding in `wrangler.jsonc`; no provider setup or secret commands are needed. Validate locally and deploy updates:
 
 ```bash
 npx wrangler dev
@@ -122,7 +109,7 @@ Dashboard labels evolve, but the binding and build values below are exact:
 2. Choose **Create application** → **Import a repository** (or **Connect to Git**) and authorize GitHub. Select this PikApp repository and branch.
 3. Choose a **Workers** deployment, not a Pages-only project. Set the build command to `npm install` (or leave it blank if the dashboard installs dependencies automatically) and deploy command to `npx wrangler deploy`. The root directory is `/`. Wrangler reads `worker/index.js` and the `public/` assets declaration from `wrangler.jsonc`.
 4. The first Git deployment should automatically provision the KV namespace from the ID-less `PIKAPP_KV` binding in `wrangler.jsonc`. Check **Storage & Databases** → **KV** for the new namespace and check **Worker Settings** → **Bindings** for the `PIKAPP_KV` binding. If the Dashboard build does not write Wrangler's generated ID back to Git, copy the namespace ID, add `"id": "THE_COPIED_ID"` beside the binding in `wrangler.jsonc` using GitHub's mobile editor, commit, and redeploy. This prevents a later clean build from creating another namespace. As a manual fallback, create the namespace in **Storage & Databases** → **KV** and add it under **Settings** → **Bindings** with the exact variable name `PIKAPP_KV`.
-5. Under the Worker's **Settings** → **Variables and Secrets**, add encrypted secrets `MODERATION_API_KEY` and, if using chat, `AI_API_KEY`. Never add them as plaintext repository variables. Add non-secret variables `AI_PROVIDER=openai-compatible`, `AI_BASE_URL=https://api.openai.com/v1`, and the chosen `AI_MODEL` when enabling chat. If AI remains disabled, keep `AI_PROVIDER=none` and omit `AI_API_KEY`.
+5. Under the Worker's **Settings** → **Bindings**, verify that the Workers AI binding is named `AI`. Wrangler creates it from `wrangler.jsonc`. Do not add Groq, OpenAI, or moderation API-key secrets; none are used. The model names can be changed through the non-secret `AI_MODEL` and `MODERATION_MODEL` variables.
 6. Open **Deployments**, select the latest Git commit, and choose **Deploy** or **Retry deployment**. Build logs should show Wrangler uploading the Worker and assets.
 7. The application URL appears on the Worker overview and deployment details as `https://pikapp.<your-workers-subdomain>.workers.dev`. Open `/mod.html` for moderation after bootstrapping an admin through the KV viewer.
 8. For updates, edit/commit files on GitHub from Chrome. The Git integration automatically creates a new deployment; otherwise open **Deployments** and redeploy the latest commit.
@@ -135,8 +122,8 @@ If your account UI offers only **Pages** for Git imports, use **Workers & Pages 
 - **401:** sign in; cookies must be enabled. Secure session cookies require HTTPS outside local Wrangler development.
 - **403:** the account is banned or lacks the backend role required for moderation.
 - **429:** wait five seconds or avoid submitting a recent duplicate.
-- **AI 503:** set `AI_PROVIDER`, `AI_API_KEY`, endpoint, and model. The app intentionally does not fake responses.
-- **Posts rejected when moderation is configured:** check provider availability and credentials; the production moderation path fails closed.
+- **AI 503:** verify that the Worker's Workers AI binding is named `AI`. The app intentionally does not fake responses.
+- **Posts rejected with a service-unavailable audit reason:** check the Workers AI binding and moderation model availability; moderation intentionally fails closed.
 - **Static 404:** verify the Worker is deployed from repository root and assets directory remains `./public`.
 
 ## MVP limitations
