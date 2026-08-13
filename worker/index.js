@@ -1,5 +1,7 @@
 import MiniSearch from 'minisearch';
 
+const PBKDF2_ITERATIONS = 100_000;
+
 const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
 const error = (message, status = 400) => json({ error: message }, status);
 const id = prefix => `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`;
@@ -13,16 +15,19 @@ const put = (kv, key, value, options) => kv.put(key, JSON.stringify(value), opti
 const updateList = async (kv, key, mutate, max = 500) => { const list = parseList(await kv.get(key)); const next = mutate(list).slice(0, max); await kv.put(key, JSON.stringify(next)); return next; };
 
 async function sha256(value) { const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)); return [...new Uint8Array(bytes)].map(x => x.toString(16).padStart(2, '0')).join(''); }
-async function hashPassword(password, salt = crypto.getRandomValues(new Uint8Array(16))) {
+async function hashPassword(password, salt = crypto.getRandomValues(new Uint8Array(16)), iterations = PBKDF2_ITERATIONS) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 210000, hash: 'SHA-256' }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256);
   const enc = b => btoa(String.fromCharCode(...new Uint8Array(b)));
-  return `pbkdf2-sha256$210000$${enc(salt)}$${enc(bits)}`;
+  return `pbkdf2-sha256$${iterations}$${enc(salt)}$${enc(bits)}`;
 }
 async function verifyPassword(password, stored) {
-  const [scheme, rounds, salt, expected] = String(stored).split('$'); if (scheme !== 'pbkdf2-sha256') return false;
+  const parts = String(stored).split('$'); if (parts.length !== 4) return false;
+  const [scheme, rounds, salt, expected] = parts;
+  const iterations = Number(rounds);
+  if (scheme !== 'pbkdf2-sha256' || !Number.isSafeInteger(iterations) || iterations < 1 || iterations > PBKDF2_ITERATIONS) return false;
   const bytes = Uint8Array.from(atob(salt), c => c.charCodeAt(0));
-  const actual = await hashPassword(password, bytes); return actual === `${scheme}$${rounds}$${salt}$${expected}`;
+  const actual = await hashPassword(password, bytes, iterations); return actual === `${scheme}$${rounds}$${salt}$${expected}`;
 }
 async function auth(request, env) {
   const cookie = request.headers.get('cookie') || ''; const token = cookie.match(/(?:^|;\s*)pikapp_session=([^;]+)/)?.[1];
