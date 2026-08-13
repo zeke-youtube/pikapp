@@ -9,5 +9,5 @@
     // writes its generated id back here, and reuses it on later deploys.
     { "binding": "PIKAPP_KV" }
   ],
-  "vars": { "AI_PROVIDER": "none", "AI_BASE_URL": "https://api.openai.com/v1", "AI_MODEL": "gpt-4.1-mini" }
+  "vars": { "AI_PROVIDER": "groq", "AI_BASE_URL": "https://api.openai.com/v1", "AI_MODEL": "gpt-4.1-mini" }
 }
