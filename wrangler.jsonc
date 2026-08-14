@@ -1,17 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "pikapp",
+  "name": "pikamail",
   "main": "worker/index.js",
   "compatibility_date": "2026-08-01",
-  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "single-page-application" },
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
   "kv_namespaces": [
     // No id is intentional: Wrangler provisions the namespace on first deploy,
     // writes its generated id back here, and reuses it on later deploys.
-    { "binding": "PIKAPP_KV" }
-  ],
-  "ai": { "binding": "AI" },
-  "vars": {
-    "AI_MODEL": "@cf/qwen/qwen3-30b-a3b-fp8",
-    "MODERATION_MODEL": "@cf/meta/llama-guard-3-8b"
-  }
+    { "binding": "PIKAMAIL_KV" }
+  ]
 }
