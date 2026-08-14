@@ -1,12 +1,13 @@
 import { api, escapeHtml, gravatar } from './api.js';
 import { me } from './auth.js';
+import { navigate } from './navigation.js';
 
 const formatTime = value => new Date(value).toLocaleString();
 const editedLabel = p => p.edited ? `<span class="edited" title="Edited ${formatTime(p.updatedAt)}">edited</span>` : '';
 const canRemove = p => me() && (me().id === p.authorId || ['moderator', 'admin'].includes(me().role));
 
 export const postHtml = (p, { reply = false, thread = false } = {}) => `<article class="post${reply ? ' reply' : ''}" data-id="${p.id}" data-parent="${p.parentId || ''}">
-  <div class="post-head"><img class="avatar" src="${gravatar(p.author.emailHash)}" alt="${escapeHtml(p.author.displayName)}'s profile picture"><div class="post-meta"><strong>${escapeHtml(p.author.displayName)}</strong><a href="#profile/${encodeURIComponent(p.author.username)}">@${escapeHtml(p.author.username)}</a><span><time datetime="${new Date(p.createdAt).toISOString()}">${formatTime(p.createdAt)}</time> ${editedLabel(p)}</span></div></div>
+  <div class="post-head"><img class="avatar" src="${gravatar(p.author.avatarHash)}" alt="${escapeHtml(p.author.displayName)}'s profile picture"><div class="post-meta"><strong>${escapeHtml(p.author.displayName)}</strong><a data-go="profile/${encodeURIComponent(p.author.username)}" href="#profile/${encodeURIComponent(p.author.username)}">@${escapeHtml(p.author.username)}</a><span><time datetime="${new Date(p.createdAt).toISOString()}">${formatTime(p.createdAt)}</time> ${editedLabel(p)}</span></div></div>
   <p class="post-content">${escapeHtml(p.content)}</p>
   <div class="actions"><button data-like class="${p.liked ? 'liked' : ''}" aria-label="${p.liked ? 'Unlike' : 'Like'}">♥ ${p.likes}</button>${!reply ? `<button data-open-thread aria-label="Open replies">↩ Reply <span data-reply-count>${p.replyCount || 0}</span></button>` : ''}${me()?.id === p.authorId ? '<button data-edit>Edit</button>' : ''}${canRemove(p) ? `<button data-delete class="danger">${me()?.id === p.authorId ? 'Delete' : 'Remove'}</button>` : ''}</div>
   ${!reply && thread ? '<div class="inline-reply-slot"></div>' : ''}
@@ -14,7 +15,7 @@ export const postHtml = (p, { reply = false, thread = false } = {}) => `<article
 
 function replyComposer(post) { return `<form class="reply-composer" data-reply-form><div class="replying-to"><span>Replying to</span><strong>${escapeHtml(post.author.displayName)} <small>@${escapeHtml(post.author.username)}</small></strong></div><label class="sr-only" for="reply-${post.id}">Reply text</label><textarea id="reply-${post.id}" maxlength="750" placeholder="Write your reply…" required></textarea><div class="composer-foot"><span data-count>0 / 750</span><div><button type="button" class="quiet" data-cancel-reply>Cancel</button><button type="submit">Reply</button></div></div><p class="form-error" role="alert"></p></form>`; }
 function editForm(p) { return `<form class="edit-form"><label><strong>Edit ${p.parentId ? 'reply' : 'post'}</strong><textarea maxlength="750" required>${escapeHtml(p.content)}</textarea></label><div class="composer-foot"><span data-count>${p.content.length} / 750</span><div><button type="button" class="quiet" data-cancel-edit>Cancel</button><button type="submit">Save</button></div></div><p class="form-error" role="alert"></p></form>`; }
-const setSearchPost = (id, focusReply = false) => { if (focusReply) sessionStorage.setItem('pikapp-focus-reply', id); const url = new URL(location.href); if (id) url.searchParams.set('post', id); else url.searchParams.delete('post'); history.pushState({}, '', url); dispatchEvent(new PopStateEvent('popstate')); };
+const setSearchPost = (id, focusReply = false) => { if (focusReply) sessionStorage.setItem('pikapp-focus-reply', id); navigate(id ? 'post' : 'home', id ? { id } : {}); };
 
 export function bindPosts(root, notice, refresh) { root.querySelectorAll('.post').forEach(el => { const pid = el.dataset.id;
   el.querySelector('[data-like]')?.addEventListener('click', async e => { if (!me()) return notice('Sign in to like posts.'); const b = e.currentTarget, was = b.classList.contains('liked'), old = b.textContent; b.disabled = true; try { const r = await api(`/api/posts/${pid}/like`, { method: was ? 'DELETE' : 'POST' }); b.classList.toggle('liked', r.liked); b.textContent = `♥ ${r.likes}`; } catch (x) { b.textContent = old; notice(x.message); } finally { b.disabled = false; } });
