@@ -55,7 +55,7 @@ To bootstrap the first admin, register normally, then use the Cloudflare dashboa
 
 ## Profiles and settings
 
-Profiles request 20 authored posts at a time from `GET /api/users/:username/posts`; the response includes a bounded next-page cursor for a **Load more** button. The profile, Home, thread, and Explore views share `postHtml` and `bindPosts`, so likes, replies, timestamps, edited labels, and authorized edit/delete actions behave consistently. Own-profile settings use authenticated `PATCH /api/settings/profile`; the Worker derives the account from the session rather than accepting a user ID. `POST /api/settings/avatar` replaces the user's public identicon seed without changing their private email.
+Profiles request 20 authored posts at a time from `GET /api/users/:username/posts`; the response includes a bounded next-page cursor for a **Load more** button. The profile, Home, thread, and Explore views share `postHtml` and `bindPosts`, so likes, replies, timestamps, edited labels, and authorized edit/delete actions behave consistently. Own-profile settings use authenticated `PATCH /api/settings/profile`; the Worker derives the account from the session rather than accepting a user ID. **Refresh avatar** is client-side: it reloads the same Gravatar hash with a temporary cache-busting query parameter and never mutates the account.
 
 Navigation is centralized in `public/js/navigation.js`. It constructs a destination from a per-view allowlist, clears unrelated search/hash state, and uses `pushState`/`replaceState`. `popstate` restores Back/Forward views, while direct `/?post=<id>` URLs still render threads after refresh.
 
