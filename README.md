@@ -1,6 +1,6 @@
 # PikApp MVP
 
-PikApp is a lightweight, mobile-first social network with a deliberately separate AI chat workspace. The social side supports registration, sessions, editable text posts, one-level threaded replies, likes, follows, profiles, Gravatar avatars, and ranked Explore search. Direct thread links use `/?post=<post-id>`. AI never appears in or modifies the social feed.
+PikApp is a lightweight, mobile-first social network with a deliberately separate AI chat workspace. The social side supports registration, sessions, editable text posts, one-level threaded replies, likes, follows, profiles with paginated post lists and owner settings, refreshable identicon avatars, and ranked Explore search. Direct thread links use `/?post=<post-id>`. AI never appears in or modifies the social feed.
 
 ## Architecture
 
@@ -46,12 +46,18 @@ Model variables (non-secret values are in `wrangler.jsonc`):
 
 | Name | Default | Purpose |
 |---|---|---|
-| `AI_MODEL` | `@cf/meta/llama-3.1-8b-instruct` | Workers AI chat model |
+| `AI_MODEL` | `@cf/qwen/qwen3-30b-a3b-fp8` | Workers AI chat model |
 | `MODERATION_MODEL` | `@cf/meta/llama-guard-3-8b` | Workers AI safety model |
 
 The `ai` section in `wrangler.jsonc` creates the `AI` binding. Workers AI is authenticated by the deployed Worker, so the application has no AI or moderation secrets to create, store, or expose.
 
 To bootstrap the first admin, register normally, then use the Cloudflare dashboard's KV viewer to edit `user:<id>` and change `"role":"user"` to `"role":"admin"`. Find the ID in `username:<your_username>`. Thereafter admins can manage moderator roles via the protected API. Do not accept roles from registration clients.
+
+## Profiles and settings
+
+Profiles request 20 authored posts at a time from `GET /api/users/:username/posts`; the response includes a bounded next-page cursor for a **Load more** button. The profile, Home, thread, and Explore views share `postHtml` and `bindPosts`, so likes, replies, timestamps, edited labels, and authorized edit/delete actions behave consistently. Own-profile settings use authenticated `PATCH /api/settings/profile`; the Worker derives the account from the session rather than accepting a user ID. `POST /api/settings/avatar` replaces the user's public identicon seed without changing their private email.
+
+Navigation is centralized in `public/js/navigation.js`. It constructs a destination from a per-view allowlist, clears unrelated search/hash state, and uses `pushState`/`replaceState`. `popstate` restores Back/Forward views, while direct `/?post=<id>` URLs still render threads after refresh.
 
 ## Editing and conversation behavior
 
@@ -61,7 +67,7 @@ In the separate AI workspace, only user messages have **Edit**. **Save & Resend*
 
 ## Why Workers AI was failing
 
-The old chat path treated the AI call as a one-off integration and returned an undifferentiated upstream error, while example environment files incorrectly implied external AI and moderation keys were required. PikApp now resolves a small `CloudflareWorkersAIProvider` from the Wrangler-provisioned `AI` binding and calls `env.AI.run(model, { messages })`. Invalid input, missing/malformed binding, rate limits, and temporary upstream failures receive distinct 400, 500, 429, and 503 responses. Server logs retain diagnostic status/name/message only and public responses never include stacks or secrets. The only required AI credential is Cloudflare’s binding authorization; **no `AI_API_KEY` or `MODERATION_API_KEY` is required**.
+The production 503 was caused by Cloudflare error 5028: the previously configured Infire Llama model was deprecated on 2026-05-30. The replacement `@cf/qwen/qwen3-30b-a3b-fp8` was verified in the current Cloudflare-generated Workers AI model types shipped with workerd and accepts the documented `{ messages }` chat input. Model configuration is centralized through `AI_MODEL` with the same supported fallback in the Worker. The old chat path treated the AI call as a one-off integration and returned an undifferentiated upstream error, while example environment files incorrectly implied external AI and moderation keys were required. PikApp now resolves a small `CloudflareWorkersAIProvider` from the Wrangler-provisioned `AI` binding and calls `env.AI.run(model, { messages })`. Invalid input, missing/malformed binding, rate limits, and temporary upstream failures receive distinct 400, 500, 429, and 503 responses. Server logs retain diagnostic status/name/message only and public responses never include stacks or secrets. The only required AI credential is Cloudflare’s binding authorization; **no `AI_API_KEY` or `MODERATION_API_KEY` is required**.
 
 ## Moderation and spam controls
 
@@ -138,4 +144,4 @@ If your account UI offers only **Pages** for Git imports, use **Workers & Pages 
 
 ## MVP limitations
 
-KV list mutations are not atomic and search covers bounded recent records. There are no uploads, DMs, notifications, WebSockets, or realtime features. Profile editing is intentionally deferred; the stored model already supports bios/email visibility for later authenticated settings UI.
+KV list mutations are not atomic and search covers bounded recent records. There are no uploads, DMs, notifications, WebSockets, or realtime features. Avatar uploads are not included: Refresh avatar creates a new privacy-preserving Gravatar identicon seed, which avoids adding R2 or another storage system.
