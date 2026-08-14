@@ -20,7 +20,7 @@ const error = (message, status = 400) => json({ error: message }, status);
 const id = prefix => `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`;
 const now = () => Date.now();
 const normalizeUsername = value => String(value || '').trim().toLowerCase();
-const publicUser = u => ({ id: u.id, username: u.username, displayName: u.displayName, bio: u.bio, avatarHash: u.avatarHash || u.emailHash, showEmail: !!u.showEmail, ...(u.showEmail ? { email: u.email } : {}), role: u.role, banned: !!u.banned, createdAt: u.createdAt });
+const publicUser = u => ({ id: u.id, username: u.username, displayName: u.displayName, bio: u.bio, avatarHash: u.emailHash, showEmail: !!u.showEmail, ...(u.showEmail ? { email: u.email } : {}), role: u.role, banned: !!u.banned, createdAt: u.createdAt });
 const parseList = value => value ? JSON.parse(value) : [];
 const readJson = async request => { try { return await request.json(); } catch { return null; } };
 const get = async (kv, key) => { const v = await kv.get(key); return v ? JSON.parse(v) : null; };
@@ -99,18 +99,21 @@ async function userPosts(request, env, username) {
   const page = authored.slice(cursor, cursor + limit), viewer = await auth(request, env);
   return json({ posts: await Promise.all(page.map(p => postView(env, p, viewer))), nextCursor: cursor + limit < authored.length ? String(cursor + limit) : null });
 }
-async function updateSettings(request, env, refreshAvatar = false) {
+async function updateSettings(request, env) {
   const user = await requireUser(request, env); if (user instanceof Response) return user;
-  if (refreshAvatar) user.avatarHash = await sha256(crypto.randomUUID());
-  else {
-    const b = await readJson(request); if (!b) return error('Invalid JSON');
-    const username = normalizeUsername(b.username), displayName = String(b.displayName || '').trim(), bio = String(b.bio || '').trim();
-    if (!/^[a-z0-9_]{3,24}$/.test(username)) return error('Username must be 3–24 letters, numbers, or underscores.');
-    if (!displayName || displayName.length > 50) return error('Display name must contain 1–50 characters.');
-    if (bio.length > 160) return error('Bio must be 160 characters or fewer.');
-    if (username !== user.username) { if (await env.PIKAPP_KV.get(`username:${username}`)) return error('Username is already taken.', 409); await env.PIKAPP_KV.put(`username:${username}`, user.id); await env.PIKAPP_KV.delete(`username:${user.username}`); }
-    user.username = username; user.displayName = displayName; user.bio = bio; user.showEmail = !!b.showEmail;
+  const b = await readJson(request); if (!b) return error('Invalid JSON');
+  const username = normalizeUsername(b.username), displayName = String(b.displayName ?? '').trim(), bio = String(b.bio ?? '').trim();
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) return error('Username must be 3–24 letters, numbers, or underscores.');
+  if (!displayName || displayName.length > 50) return error('Display name must contain 1–50 characters.');
+  if (bio.length > 160) return error('Bio must be 160 characters or fewer.');
+  if (typeof b.showEmail !== 'boolean') return error('Show email must be true or false.');
+  if (username !== user.username) {
+    const owner = await env.PIKAPP_KV.get(`username:${username}`);
+    if (owner && owner !== user.id) return error('Username is already taken.', 409);
+    await env.PIKAPP_KV.put(`username:${username}`, user.id);
+    await env.PIKAPP_KV.delete(`username:${user.username}`);
   }
+  user.username = username; user.displayName = displayName; user.bio = bio; user.showEmail = b.showEmail;
   await put(env.PIKAPP_KV, `user:${user.id}`, user); return json({ user: publicUser(user) });
 }
 async function search(request, env, q) { if (!q.trim()) return json({ results: [] }); const userIds = parseList(await env.PIKAPP_KV.get('users:recent')).slice(0, 300), postIds = parseList(await env.PIKAPP_KV.get('feed:recent')).slice(0, 500); const users = (await Promise.all(userIds.map(x => get(env.PIKAPP_KV, `user:${x}`)))).filter(Boolean); const posts = (await Promise.all(postIds.map(x => get(env.PIKAPP_KV, `post:${x}`)))).filter(Boolean); const docs = [...users.map(u => ({ id: `u:${u.id}`, type: 'user', username: u.username, displayName: u.displayName, content: '', boost: 2 })), ...posts.map(p => ({ id: `p:${p.id}`, type: 'post', username: '', displayName: '', content: p.content, boost: 1 }))]; const mini = new MiniSearch({ fields: ['username', 'displayName', 'content'], storeFields: ['type'], searchOptions: { prefix: true, fuzzy: 0.2, boost: { username: 4, displayName: 3, content: 1 } } }); mini.addAll(docs); const hits = mini.search(q).slice(0, 20); const results = await Promise.all(hits.map(async h => h.type === 'user' ? { type: 'user', user: publicUser(users.find(u => `u:${u.id}` === h.id)), score: h.score } : { type: 'post', post: await postView(env, posts.find(p => `p:${p.id}` === h.id), null), score: h.score })); return json({ results }); }
@@ -126,7 +129,7 @@ export default { async fetch(request, env) {
   if (request.method === 'POST' && p === '/api/auth/logout') return json({ ok: true }, 200, { 'set-cookie': 'pikapp_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0' }); if (request.method === 'GET' && p === '/api/auth/me') { const u = await auth(request, env); return u ? json({ user: publicUser(u) }) : error('Unauthorized', 401); }
   if (p === '/api/feed' && request.method === 'GET') return feed(request, env); if (p === '/api/posts' && request.method === 'POST') return createPost(request, env);
   let m = p.match(/^\/api\/posts\/([^/]+)(?:\/(like|replies))?$/); if (m) { if (m[2] === 'like' && ['POST','DELETE'].includes(request.method)) return toggleLike(request, env, m[1], request.method === 'POST'); if (m[2] === 'replies') return replies(request, env, m[1]); if (m[2]) return error('Method not allowed', 405); if (request.method === 'DELETE') return deletePost(request, env, m[1]); if (request.method === 'PATCH') return editPost(request, env, m[1]); if (request.method !== 'GET') return error('Method not allowed', 405); const post = await get(env.PIKAPP_KV, `post:${m[1]}`); return post ? json({ post: await postView(env, post, await auth(request, env)) }) : error('Not found', 404); }
-  if (p === '/api/settings/profile' && request.method === 'PATCH') return updateSettings(request, env); if (p === '/api/settings/avatar' && request.method === 'POST') return updateSettings(request, env, true);
+  if (p === '/api/settings/profile' && request.method === 'PATCH') return updateSettings(request, env);
   m = p.match(/^\/api\/users\/([^/]+)\/posts$/); if (m && request.method === 'GET') return userPosts(request, env, decodeURIComponent(m[1]));
   m = p.match(/^\/api\/users\/([^/]+)(?:\/(follow))?$/); if (m) return userRoute(request, env, decodeURIComponent(m[1]), m[2]); if (p === '/api/search') return search(request, env, url.searchParams.get('q') || ''); if (p === '/api/ai/chat' && request.method === 'POST') return aiChat(request, env); if (p.startsWith('/api/mod/')) return modRoute(request, env, p); return error('Not found', 404);
 } };
