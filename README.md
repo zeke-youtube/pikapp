@@ -157,3 +157,11 @@ If your account UI offers only **Pages** for Git imports, use **Workers & Pages 
 ## MVP limitations
 
 KV list mutations are not atomic and search covers bounded recent records. There are no uploads, DMs, notifications, WebSockets, or realtime features. Avatar uploads are not included: Refresh avatar creates a new privacy-preserving Gravatar identicon seed, which avoids adding R2 or another storage system.
+
+## PikaMail developer API senders
+
+Each developer application owner can permanently claim one `@pikamail.com` API email through `POST /api/mail/developer/apps/:appId/sender`. The Worker derives the user from the existing PikApp session and loads the application to verify `ownerId`; browser-supplied owner IDs are ignored. Personal addresses and application senders use the same direct `mail:address:<normalized-local-part>` PIKAPP_KV ownership record (`type: user` or `type: app`), so either claim path sees collisions without scanning users or applications. Reserved-name and address-format validation is shared.
+
+Claims use pre-write and post-write ownership checks, including a unique claim identifier, and verify ownership again after saving the application/user record. Cloudflare KV is eventually consistent, so these checks reduce race risk but are **not** a globally transactional uniqueness constraint. No atomic guarantee is claimed. The system continues to require only the existing `PIKAPP_KV` namespace.
+
+A `pm_live_…` key can send only as its application's permanent API email. `from` is optional and defaults to that address; when supplied it must match exactly after normalization. Applications without a claimed sender cannot send. Plaintext keys remain visible only on creation/regeneration, while KV stores their SHA-256 hash. Sender claims create a `developer_sender_claimed` mail audit event containing only the app ID, owner user ID, sender address, and event timestamp.
