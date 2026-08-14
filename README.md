@@ -2,6 +2,16 @@
 
 PikApp is a lightweight, mobile-first social network with a deliberately separate AI chat workspace. The social side supports registration, sessions, editable text posts, one-level threaded replies, likes, follows, profiles with paginated post lists and owner settings, refreshable identicon avatars, and ranked Explore search. Direct thread links use `/?post=<post-id>`. AI never appears in or modifies the social feed.
 
+## PikaMail workspace
+
+PikApp includes **PikaMail**, a private internal-mail workspace for existing PikApp accounts. It uses the same PikApp session, Worker deployment, and `PIKAPP_KV` namespace—there is no second login, application, Worker, or database. A user may claim one permanent `@pikamail.com` address. Delivery is internal-only; external email, SMTP, IMAP, POP3, aliases, and address renaming are not supported.
+
+Mail is stored under bounded `mail:*` keys, including direct address ownership indexes, message records, cursor-paginated Inbox/Sent indexes, read markers, developer applications, hashed API-key indexes, fixed-window rate counters, and safe audit records. Cloudflare KV is eventually consistent, so address claims use pre-write and post-write ownership checks but cannot promise globally transactional uniqueness. The same limitation makes the 60-request-per-minute application counter lightweight abuse protection rather than a globally transactional limit.
+
+PikaMail's live developer API is `POST /api/mail/v1/send`. Developer applications use cryptographically random `pm_live_` keys whose plaintext is returned only when created or regenerated; only SHA-256 hashes are stored. An admin using PikApp's existing role authorization must assign each allowed system sender. The API and owner-only first-party tester enforce enabled state, assigned sender, internal recipient validation, rate limits, and real Inbox delivery. There is no test-key prefix or sandbox.
+
+Mail addresses and contents remain inside authenticated mail APIs: they are not included in public profiles, the feed, MiniSearch, crawler pages, or PikApp AI context. Message text is rendered as plain text in the browser. Admin mail routes can inspect application metadata, assign senders, enable or disable applications, and revoke access; audit events intentionally exclude keys, sessions, passwords, and message bodies.
+
 ## Architecture
 
 - **Frontend:** directly editable HTML, responsive CSS, and small vanilla JavaScript ES modules in `public/`. No build step or framework.
@@ -39,7 +49,7 @@ Required binding:
 
 | Name | Type | Purpose |
 |---|---|---|
-| `PIKAPP_KV` | KV namespace | users, sessions, posts, relationships, moderation metadata |
+| `PIKAPP_KV` | KV namespace | users, sessions, posts, relationships, moderation metadata, and namespaced PikaMail data |
 | `AI` | Workers AI | AI chat and automated post moderation |
 
 Model variables (non-secret values are in `wrangler.jsonc`):

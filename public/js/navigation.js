@@ -1,4 +1,4 @@
-const routes = new Set(['home', 'explore', 'ai', 'profile']);
+const routes = new Set(['home', 'explore', 'ai', 'mail', 'profile']);
 
 export function destination(view, options = {}, base = location.href) {
   const url = new URL(base);
